@@ -8,6 +8,25 @@ typedef struct {
     ssize_t input_length;
 } InputBuffer;
 
+typedef enum {
+    SHELL_COMMAND_SUCCESS,
+    SHELL_COMMAND_UNRECOGNIZED
+} ShellCommandResult;
+
+typedef enum {
+    PREPARE_SUCCESS,
+    PREPARE_UNRECOGNIZED_STATEMENT
+} PrepareResult;
+
+typedef enum {
+    INSERT_STATEMENT,
+    SELECT_STATEMENT
+} StatementType;
+
+typedef struct {
+    StatementType type;
+} Statement;
+
 InputBuffer* new_input_buffer() {
     InputBuffer* input_buffer = malloc(sizeof(InputBuffer));
     input_buffer->buffer = NULL;
@@ -37,6 +56,28 @@ void read_input(InputBuffer* input_buffer) {
 void close_buffer(InputBuffer* input_buffer){
     free(input_buffer->buffer);
     free(input_buffer);
+}
+
+ShellCommandResult do_shell_command(InputBuffer *input_buffer) {
+    if(strcmp(input_buffer->buffer, ".exit") == 0) {
+        close_buffer(input_buffer);
+        exit(EXIT_SUCCESS);
+    }
+    else {
+        return SHELL_COMMAND_UNRECOGNIZED;
+    }
+}
+
+PrepareResult prepare_statement(InputBuffer *Input_buffer, Statement *statement) {
+    if(strncmp(Input_buffer->buffer, "insert", 6) == 0) {
+        statement->type = INSERT_STATEMENT;
+        return PREPARE_SUCCESS;
+    }
+    if(strncmp(Input_buffer->buffer, "select" ,6) == 0) {
+        statement->type = SELECT_STATEMENT;
+        return PREPARE_SUCCESS;
+    }
+    return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
 // 26-Mar-2025
