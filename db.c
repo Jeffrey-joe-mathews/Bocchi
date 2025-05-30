@@ -28,7 +28,8 @@ void read_input(InputBuffer* input_buffer) {
         exit(EXIT_FAILURE);
     }
 
-
+    input_buffer->input_length = bytes_read-1;
+    input_buffer->buffer[bytes_read-1] = 0;
 }
 
 // 26-Mar-2025
@@ -39,13 +40,13 @@ int main (int argc, char *argv[]) {
     while (true) { 
         print_prompt();
         read_input(input_buffer);
-    }
-
-    if(strcmp(input_buffer->buffer, ".exit")==0) {
-        exit(EXIT_SUCCESS);
-    }
-    else {
-        printf("Illegal Command : %s.\n", input_buffer->buffer);
+        
+        if(strcmp(input_buffer->buffer, ".exit")==0 || strcmp(input_buffer->buffer, ".close")==0) {
+            exit(EXIT_SUCCESS);
+        }
+        else {
+            printf("Illegal Command : %s.\n", input_buffer->buffer);
+        }
     }
     return 0;
 }
