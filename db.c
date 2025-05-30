@@ -36,7 +36,6 @@ void read_input(InputBuffer* input_buffer) {
 
 void close_buffer(InputBuffer* input_buffer){
     free(input_buffer->buffer);
-    free(input_buffer->buffer_length);
     free(input_buffer);
 }
 
