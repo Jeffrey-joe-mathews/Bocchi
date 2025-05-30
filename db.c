@@ -5,7 +5,7 @@
 typedef struct {
     char *buffer;
     size_t buffer_length;
-    size_t input_length;
+    ssize_t input_length;
 } InputBuffer;
 
 InputBuffer* new_input_buffer() {
@@ -23,6 +23,8 @@ void print_prompt() {
 
 void read_input(InputBuffer* input_buffer) {
     ssize_t bytes_read = getline(&(input_buffer->buffer), &(input_buffer->buffer_length), stdin);
+    // ssize_t is signed and can give negative values if something goes wrong hernce used for error handling over here
+    // bytes_read contains the size which is also the length coincidentally because each character in char datatype has a size of 1
     if(bytes_read<=0) {
         perror("Error in reading the input!\n");
         exit(EXIT_FAILURE);
@@ -30,6 +32,12 @@ void read_input(InputBuffer* input_buffer) {
 
     input_buffer->input_length = bytes_read-1;
     input_buffer->buffer[bytes_read-1] = 0;
+}
+
+void close_buffer(InputBuffer* input_buffer){
+    free(input_buffer->buffer);
+    free(input_buffer->buffer_length);
+    free(input_buffer);
 }
 
 // 26-Mar-2025
@@ -42,6 +50,7 @@ int main (int argc, char *argv[]) {
         read_input(input_buffer);
         
         if(strcmp(input_buffer->buffer, ".exit")==0 || strcmp(input_buffer->buffer, ".close")==0) {
+            close_buffer(input_buffer);
             exit(EXIT_SUCCESS);
         }
         else {
