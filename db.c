@@ -6,6 +6,8 @@
 #define USERNAME_SIZE_TEMP_COLUMN 32
 #define EMAIL_SIZE_TEMP_COLUMN 255
 
+#define MAX_TABLE_PAGES 100
+
 typedef struct
 {
     char *buffer;
@@ -45,6 +47,26 @@ typedef struct
     char email[EMAIL_SIZE_TEMP_COLUMN];
 } Row;
 
+typedef struct {
+    uint32_t num_rows;
+    void *pages[MAX_TABLE_PAGES];
+} Table;
+
+Table* newTable() {
+    Table* table = (Table*)malloc(sizeof(Table));
+    table->num_rows = 0;
+    for (uint32_t i = 0;i<MAX_TABLE_PAGES;i++) {
+        table->pages[i] = NULL;
+    }
+    return table;
+}
+
+void freeTable(Table* table) {
+    for (uint32_t i = 0; i<MAX_TABLE_PAGES;i++) {
+        free(table->pages[i]);
+    }
+    free(table);
+}
 
 InputBuffer *new_input_buffer()
 {
@@ -82,12 +104,13 @@ void close_buffer(InputBuffer *input_buffer)
     free(input_buffer);
 }
 
-ShellCommandResult do_shell_command(InputBuffer *input_buffer)
+ShellCommandResult do_shell_command(InputBuffer *input_buffer, Table *disposableTable)
 {
     if (((strcmp(input_buffer->buffer, ".exit")) == 0) || ((strcmp(input_buffer->buffer, ".close"))==0))
     {
         close_buffer(input_buffer);
-        exit(EXIT_SUCCESS);
+        freeTable(disposableTable);
+        exit(EXIT_SUCCESS); // or you could do return SHELL_COMMAND_SUCCESS
     }
     else
     {
@@ -137,31 +160,27 @@ void execute_recognized_statement(Statement *Statement)
 // Just trying to ru infinite loop and accept text for now
 int main(int argc, char *argv[])
 {
+    Table *table = newTable();
     InputBuffer *input_buffer = new_input_buffer();
     while (true)
     {
         print_prompt();
         read_input(input_buffer);
-        // if(strcmp(input_buffer->buffer, ".exit")==0 || strcmp(input_buffer->buffer, ".close")==0) {
-        //     close_buffer(input_buffer);
-        //     exit(EXIT_SUCCESS);
-        // }
-        // else {
-        //     printf("Illegal Command : %s.\n", input_buffer->buffer);
-        // }
+
         if (input_buffer->buffer[0] == '.')
         {
-            switch (do_shell_command(input_buffer))
+            switch (do_shell_command(input_buffer, table))
             {
             case SHELL_COMMAND_SUCCESS:
                 continue;
-
             case SHELL_COMMAND_UNRECOGNIZED:
                 printf("Illegal command señor : `%s`\n", input_buffer->buffer);
                 continue;
             }
         }
+
         Statement statement;
+        
         switch (prepare_statement(input_buffer, &statement))
         {
         case PREPARE_SUCCESS:
