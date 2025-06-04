@@ -6,7 +6,27 @@
 #define USERNAME_SIZE_TEMP_COLUMN 32
 #define EMAIL_SIZE_TEMP_COLUMN 255
 
+typedef struct
+{
+    uint32_t id;
+    char username[USERNAME_SIZE_TEMP_COLUMN];
+    char email[EMAIL_SIZE_TEMP_COLUMN];
+} Row;
+
+#define szof(struct, element) sizeof(((struct*)0)->element) // calculates the size of any field of the structure using a temporary null pointer
+
+const uint32_t ID_SIZE = szof(Row, id);
+const uint32_t USERNAME_SIZE = szof(Row, username);
+const uint32_t EMAIL_SIZE = szof(Row, email);
+const uint32_t ID_OFFSET = 0;
+const uint32_t USERNAME_OFFSET = ID_OFFSET+ID_SIZE;
+const uint32_t EMAIL_OFFSET= USERNAME_OFFSET+USERNAME_SIZE;
+const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+
+const uint32_t PAGE_SIZE = 4096; // standard number of bytes 8^4 or 2^12 : used in most modern system architectures(4KB)
 #define MAX_TABLE_PAGES 100
+const uint32_t ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE;
+const uint32_t MAX_TABLE_ROWS = ROWS_PER_PAGE * MAX_TABLE_PAGES;
 
 typedef struct
 {
@@ -34,18 +54,18 @@ typedef enum
     SELECT_STATEMENT
 } StatementType;
 
+typedef enum
+{
+    EXECUTE_SUCCESS,
+    EXECUTE_FAILURE,
+    EXECUTE_TABLE_FULL
+} ExecutionStatus;
+
 typedef struct
 {
     StatementType type;
     Row row_to_insert;
 } Statement;
-
-typedef struct
-{
-    uint32_t id;
-    char username[USERNAME_SIZE_TEMP_COLUMN];
-    char email[EMAIL_SIZE_TEMP_COLUMN];
-} Row;
 
 typedef struct {
     uint32_t num_rows;
@@ -141,13 +161,21 @@ PrepareResult prepare_statement(InputBuffer *Input_buffer, Statement *statement)
     return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
-void execute_recognized_statement(Statement *Statement)
+ExecutionStatus execute_insert(Statement *statement, Table *table) {
+    if (table->num_rows >= MAX_TABLE_ROWS) {
+        return EXECUTE_TABLE_FULL;
+    }
+
+    Row* row_to_insert = &(statement->row_to_insert);
+
+}
+
+void execute_recognized_statement(Statement *statement, Table *table)
 {
-    switch (Statement->type)
+    switch (statement->type)
     {
     case INSERT_STATEMENT:
-        printf("Insert somehing\n");
-        break;
+        return execute_insert(statement, table);
 
     case SELECT_STATEMENT:
         printf("select statement here\n");
@@ -194,7 +222,7 @@ int main(int argc, char *argv[])
             printf("unrecognized keyword in '%s'.\n", input_buffer->buffer);
             continue;
         }
-        execute_recognized_statement(&statement);
+        execute_recognized_statement(&statement, table);
         printf("Executed.\n");
     }
     return 0;
