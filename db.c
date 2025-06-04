@@ -125,11 +125,11 @@ PrepareResult prepare_statement(InputBuffer *Input_buffer, Statement *statement)
         statement->type = INSERT_STATEMENT;
         int args_count = sscanf(
             Input_buffer->buffer, 
-            "insert %d %s %s", 
+            "insert %d %31s %254s", 
             &(statement->row_to_insert.id), statement->row_to_insert.username, statement->row_to_insert.email
         );
         if(args_count<3) {
-            return PREPARE_SYNTAX_ERROR
+            return PREPARE_SYNTAX_ERROR;
         }
         return PREPARE_SUCCESS;
     }
@@ -180,12 +180,16 @@ int main(int argc, char *argv[])
         }
 
         Statement statement;
-        
         switch (prepare_statement(input_buffer, &statement))
         {
         case PREPARE_SUCCESS:
             break;
-
+        case PREPARE_SYNTAX_ERROR:
+            printf("Could not Tokenize the statement '%s'.\n",input_buffer->buffer);
+            if(statement.type == INSERT_STATEMENT) {
+                printf("The syntax for insertion is:\n'insert <integer_id> <32bitString_username> <254bitString_email>' obv without the ''\n");
+            }
+            continue;
         case PREPARE_UNRECOGNIZED_STATEMENT:
             printf("unrecognized keyword in '%s'.\n", input_buffer->buffer);
             continue;
