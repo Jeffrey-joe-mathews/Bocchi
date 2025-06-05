@@ -69,7 +69,7 @@ typedef struct
 
 typedef struct {
     uint32_t num_rows;
-    void *pages[MAX_TABLE_PAGES];
+    void* pages[MAX_TABLE_PAGES];
 } Table;
 
 Table* newTable() {
@@ -161,6 +161,27 @@ PrepareResult prepare_statement(InputBuffer *Input_buffer, Statement *statement)
     return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
+void convert_to_binary(Row* row, void* destination) {
+    memcpy(destination+ID_OFFSET, &(row->id), ROW_SIZE);
+    memcpy(destination+USERNAME_OFFSET, &(row->username), USERNAME_SIZE);
+    memcpy(destination+EMAIL_OFFSET, &(row->email), EMAIL_SIZE);
+}
+
+void convert_from_binary(Row* row, void* source) {
+    memcpy(&(row->id), source+ID_OFFSET, ID_SIZE);
+    memcpy(&(row->username), source+USERNAME_OFFSET, USERNAME_SIZE);
+    memcpy(&(row->email), source+EMAIL_OFFSET, EMAIL_SIZE);
+}
+
+void* row_address (Table* table, uint32_t row_num) {
+    uint32_t page_number = row_num/ROWS_PER_PAGE;
+    void* page = table->pages[page_number];
+    if(page == NULL)
+        page = table->pages[page_number] = malloc(PAGE_SIZE);
+    uint32_t offset = (row_num % ROWS_PER_PAGE) * ROW_SIZE; 
+    return page + offset;
+}
+
 ExecutionStatus execute_insert(Statement *statement, Table *table) {
     if (table->num_rows >= MAX_TABLE_ROWS) {
         return EXECUTE_TABLE_FULL;
@@ -168,9 +189,14 @@ ExecutionStatus execute_insert(Statement *statement, Table *table) {
 
     Row* row_to_insert = &(statement->row_to_insert);
 
+    convert_to_binary(row_to_insert, row_address(table, table->num_rows));
+    table->num_rows += 1;
+
+    return EXECUTE_SUCCESS;
+
 }
 
-void execute_recognized_statement(Statement *statement, Table *table)
+ExecutionStatus execute_recognized_statement(Statement *statement, Table *table)
 {
     switch (statement->type)
     {
@@ -222,8 +248,15 @@ int main(int argc, char *argv[])
             printf("unrecognized keyword in '%s'.\n", input_buffer->buffer);
             continue;
         }
-        execute_recognized_statement(&statement, table);
-        printf("Executed.\n");
+
+        switch(execute_recognized_statement(&statement, table)) {
+            case EXECUTE_SUCCESS:
+                printf("EXECUTED\n");
+                break;
+            case EXECUTE_TABLE_FULL:
+                printf("ERROR!!! TABLE FULL\n");
+                break;
+        }
     }
     return 0;
 }
