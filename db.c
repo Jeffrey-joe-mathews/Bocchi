@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "db.h"
-
+//Hello
 #ifdef _WIN32
 // Custom implementation of getline for Windows
 ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
