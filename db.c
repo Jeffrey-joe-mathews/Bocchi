@@ -2,67 +2,76 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include "db.h"
 
-#define USERNAME_SIZE_TEMP_COLUMN 32
-#define EMAIL_SIZE_TEMP_COLUMN 255
+#ifdef _WIN32
+// Custom implementation of getline for Windows
+ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
+    if (lineptr == NULL || n == NULL || stream == NULL) return -1;
 
-typedef struct
-{
-    uint32_t id;
-    char username[USERNAME_SIZE_TEMP_COLUMN];
-    char email[EMAIL_SIZE_TEMP_COLUMN];
-} Row;
+    char *buf = *lineptr;
+    size_t size = *n;
+    int ch;
+    size_t len = 0;
 
-#define szof(struct, element) sizeof(((struct*)0)->element) // calculates the size of any field of the structure using a temporary null pointer
+    if (buf == NULL || size == 0) {
+        size = 128;
+        buf = malloc(size);
+        if (buf == NULL) return -1;
+        *lineptr = buf;
+        *n = size;
+    }
 
-const uint32_t ID_SIZE = szof(Row, id);
-const uint32_t USERNAME_SIZE = szof(Row, username);
-const uint32_t EMAIL_SIZE = szof(Row, email);
-const uint32_t ID_OFFSET = 0;
-const uint32_t USERNAME_OFFSET = ID_OFFSET+ID_SIZE;
-const uint32_t EMAIL_OFFSET= USERNAME_OFFSET+USERNAME_SIZE;
-const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+    while ((ch = fgetc(stream)) != EOF) {
+        if (len + 1 >= size) {
+            size *= 2;
+            char *new_buf = realloc(buf, size);
+            if (!new_buf) return -1;
+            buf = new_buf;
+            *lineptr = buf;
+            *n = size;
+        }
+        buf[len++] = ch;
+        if (ch == '\n') break;
+    }
 
-const uint32_t PAGE_SIZE = 4096; // standard number of bytes 8^4 or 2^12 : used in most modern system architectures(4KB)
-#define MAX_TABLE_PAGES 100
-const uint32_t ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE;
-const uint32_t MAX_TABLE_ROWS = ROWS_PER_PAGE * MAX_TABLE_PAGES;
+    if (len == 0) return -1;
 
-typedef struct
-{
+    buf[len] = '\0';
+    return len;
+}
+#endif
+
+typedef struct {
     char *buffer;
     size_t buffer_length;
     ssize_t input_length;
 } InputBuffer;
 
-typedef enum
-{
+typedef enum {
     SHELL_COMMAND_SUCCESS,
     SHELL_COMMAND_UNRECOGNIZED
 } ShellCommandResult;
 
-typedef enum
-{
+typedef enum {
     PREPARE_SUCCESS,
     PREPARE_SYNTAX_ERROR,
     PREPARE_UNRECOGNIZED_STATEMENT
 } PrepareResult;
 
-typedef enum
-{
+typedef enum {
     INSERT_STATEMENT,
     SELECT_STATEMENT
 } StatementType;
 
-typedef enum
-{
+typedef enum {
     EXECUTE_SUCCESS,
     EXECUTE_FAILURE,
     EXECUTE_TABLE_FULL
 } ExecutionStatus;
 
-typedef struct
-{
+typedef struct {
     StatementType type;
     Row row_to_insert;
 } Statement;
@@ -75,188 +84,176 @@ typedef struct {
 Table* newTable() {
     Table* table = (Table*)malloc(sizeof(Table));
     table->num_rows = 0;
-    for (uint32_t i = 0;i<MAX_TABLE_PAGES;i++) {
+    for (uint32_t i = 0; i < MAX_TABLE_PAGES; i++) {
         table->pages[i] = NULL;
     }
     return table;
 }
 
 void freeTable(Table* table) {
-    for (uint32_t i = 0; i<MAX_TABLE_PAGES;i++) {
+    for (uint32_t i = 0; i < MAX_TABLE_PAGES; i++) {
         free(table->pages[i]);
     }
     free(table);
 }
 
-InputBuffer *new_input_buffer()
-{
-    InputBuffer *input_buffer = malloc(sizeof(InputBuffer));
+InputBuffer* new_input_buffer() {
+    InputBuffer* input_buffer = malloc(sizeof(InputBuffer));
     input_buffer->buffer = NULL;
     input_buffer->buffer_length = 0;
     input_buffer->input_length = 0;
-
     return input_buffer;
 }
 
-void print_prompt()
-{
+void print_prompt() {
     printf("[bocchi] >> ");
 }
 
-void read_input(InputBuffer *input_buffer)
-{
+void read_input(InputBuffer* input_buffer) {
     ssize_t bytes_read = getline(&(input_buffer->buffer), &(input_buffer->buffer_length), stdin);
-    // ssize_t is signed and can give negative values if something goes wrong hernce used for error handling over here
-    // bytes_read contains the size which is also the length coincidentally because each character in char datatype has a size of 1
-    if (bytes_read <= 0)
-    {
+    if (bytes_read <= 0) {
         perror("Error in reading the input!\n");
         exit(EXIT_FAILURE);
     }
 
     input_buffer->input_length = bytes_read - 1;
-    input_buffer->buffer[bytes_read - 1] = 0;
+    input_buffer->buffer[bytes_read - 1] = 0; // Remove newline
 }
 
-void close_buffer(InputBuffer *input_buffer)
-{
+void close_buffer(InputBuffer* input_buffer) {
     free(input_buffer->buffer);
     free(input_buffer);
 }
 
-ShellCommandResult do_shell_command(InputBuffer *input_buffer, Table *disposableTable)
-{
-    if (((strcmp(input_buffer->buffer, ".exit")) == 0) || ((strcmp(input_buffer->buffer, ".close"))==0))
-    {
+ShellCommandResult do_shell_command(InputBuffer* input_buffer, Table* table) {
+    if ((strcmp(input_buffer->buffer, ".exit") == 0) || (strcmp(input_buffer->buffer, ".close") == 0)) {
         close_buffer(input_buffer);
-        freeTable(disposableTable);
-        exit(EXIT_SUCCESS); // or you could do return SHELL_COMMAND_SUCCESS
-    }
-    else
-    {
+        freeTable(table);
+        exit(EXIT_SUCCESS);
+    } else {
         return SHELL_COMMAND_UNRECOGNIZED;
     }
 }
 
-PrepareResult prepare_statement(InputBuffer *Input_buffer, Statement *statement)
-{
-    if (strncmp(Input_buffer->buffer, "insert", 6) == 0)
-    {
+PrepareResult prepare_statement(InputBuffer* input_buffer, Statement* statement) {
+    if (strncmp(input_buffer->buffer, "insert", 6) == 0) {
         statement->type = INSERT_STATEMENT;
-        int args_count = sscanf(
-            Input_buffer->buffer, 
-            "insert %d %31s %254s", 
-            &(statement->row_to_insert.id), statement->row_to_insert.username, statement->row_to_insert.email
+        int args_assigned = sscanf(
+            input_buffer->buffer,
+            "insert %d %31s %254s",
+            &(statement->row_to_insert.id),
+            statement->row_to_insert.username,
+            statement->row_to_insert.email
         );
-        if(args_count<3) {
+        if (args_assigned < 3) {
             return PREPARE_SYNTAX_ERROR;
         }
         return PREPARE_SUCCESS;
     }
-    if (strncmp(Input_buffer->buffer, "select", 6) == 0)
-    {
+
+    if (strncmp(input_buffer->buffer, "select", 6) == 0) {
         statement->type = SELECT_STATEMENT;
         return PREPARE_SUCCESS;
     }
+
     return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
 void convert_to_binary(Row* row, void* destination) {
-    memcpy(destination+ID_OFFSET, &(row->id), ROW_SIZE);
-    memcpy(destination+USERNAME_OFFSET, &(row->username), USERNAME_SIZE);
-    memcpy(destination+EMAIL_OFFSET, &(row->email), EMAIL_SIZE);
+    memcpy(destination + ID_OFFSET, &(row->id), ID_SIZE);
+    memcpy(destination + USERNAME_OFFSET, &(row->username), USERNAME_SIZE);
+    memcpy(destination + EMAIL_OFFSET, &(row->email), EMAIL_SIZE);
 }
 
 void convert_from_binary(Row* row, void* source) {
-    memcpy(&(row->id), source+ID_OFFSET, ID_SIZE);
-    memcpy(&(row->username), source+USERNAME_OFFSET, USERNAME_SIZE);
-    memcpy(&(row->email), source+EMAIL_OFFSET, EMAIL_SIZE);
+    memcpy(&(row->id), source + ID_OFFSET, ID_SIZE);
+    memcpy(&(row->username), source + USERNAME_OFFSET, USERNAME_SIZE);
+    memcpy(&(row->email), source + EMAIL_OFFSET, EMAIL_SIZE);
 }
 
-void* row_address (Table* table, uint32_t row_num) {
-    uint32_t page_number = row_num/ROWS_PER_PAGE;
-    void* page = table->pages[page_number];
-    if(page == NULL)
-        page = table->pages[page_number] = malloc(PAGE_SIZE);
-    uint32_t offset = (row_num % ROWS_PER_PAGE) * ROW_SIZE; 
-    return page + offset;
+void* row_address(Table* table, uint32_t row_num) {
+    uint32_t page_num = row_num / ROWS_PER_PAGE;
+    void* page = table->pages[page_num];
+
+    if (page == NULL) {
+        page = malloc(PAGE_SIZE);
+        table->pages[page_num] = page;
+    }
+
+    uint32_t row_offset = (row_num % ROWS_PER_PAGE) * ROW_SIZE;
+    return page + row_offset;
 }
 
-ExecutionStatus execute_insert(Statement *statement, Table *table) {
+ExecutionStatus execute_insert(Statement* statement, Table* table) {
     if (table->num_rows >= MAX_TABLE_ROWS) {
         return EXECUTE_TABLE_FULL;
     }
 
     Row* row_to_insert = &(statement->row_to_insert);
-
     convert_to_binary(row_to_insert, row_address(table, table->num_rows));
-    table->num_rows += 1;
+    table->num_rows++;
 
     return EXECUTE_SUCCESS;
-
 }
 
-ExecutionStatus execute_recognized_statement(Statement *statement, Table *table)
-{
-    switch (statement->type)
-    {
-    case INSERT_STATEMENT:
-        return execute_insert(statement, table);
-
-    case SELECT_STATEMENT:
-        printf("select statement here\n");
-        break;
+ExecutionStatus execute_recognized_statement(Statement* statement, Table* table) {
+    switch (statement->type) {
+        case INSERT_STATEMENT:
+            return execute_insert(statement, table);
+        case SELECT_STATEMENT:
+            for (uint32_t i = 0; i < table->num_rows; i++) {
+                Row row;
+                convert_from_binary(&row, row_address(table, i));
+                printf("(%d, %s, %s)\n", row.id, row.username, row.email);
+            }
+            return EXECUTE_SUCCESS;
     }
+    return EXECUTE_FAILURE;
 }
 
-// 26-Mar-2025
-// a database works in the principle of an infinite loop until exited... hence making something similar
-// Just trying to ru infinite loop and accept text for now
-int main(int argc, char *argv[])
-{
-    Table *table = newTable();
-    InputBuffer *input_buffer = new_input_buffer();
-    while (true)
-    {
+int main(int argc, char* argv[]) {
+    Table* table = newTable();
+    InputBuffer* input_buffer = new_input_buffer();
+
+    while (true) {
         print_prompt();
         read_input(input_buffer);
 
-        if (input_buffer->buffer[0] == '.')
-        {
-            switch (do_shell_command(input_buffer, table))
-            {
-            case SHELL_COMMAND_SUCCESS:
-                continue;
-            case SHELL_COMMAND_UNRECOGNIZED:
-                printf("Illegal command señor : `%s`\n", input_buffer->buffer);
-                continue;
+        if (input_buffer->buffer[0] == '.') {
+            switch (do_shell_command(input_buffer, table)) {
+                case SHELL_COMMAND_SUCCESS:
+                    continue;
+                case SHELL_COMMAND_UNRECOGNIZED:
+                    printf("Illegal command señor: '%s'\n", input_buffer->buffer);
+                    continue;
             }
         }
 
         Statement statement;
-        switch (prepare_statement(input_buffer, &statement))
-        {
-        case PREPARE_SUCCESS:
-            break;
-        case PREPARE_SYNTAX_ERROR:
-            printf("Could not Tokenize the statement '%s'.\n",input_buffer->buffer);
-            if(statement.type == INSERT_STATEMENT) {
-                printf("The syntax for insertion is:\n'insert <integer_id> <32bitString_username> <254bitString_email>' obv without the ''\n");
-            }
-            continue;
-        case PREPARE_UNRECOGNIZED_STATEMENT:
-            printf("unrecognized keyword in '%s'.\n", input_buffer->buffer);
-            continue;
+        switch (prepare_statement(input_buffer, &statement)) {
+            case PREPARE_SUCCESS:
+                break;
+            case PREPARE_SYNTAX_ERROR:
+                printf("Syntax error near: '%s'\n", input_buffer->buffer);
+                printf("Usage: insert <int> <username (max 31)> <email (max 254)>\n");
+                continue;
+            case PREPARE_UNRECOGNIZED_STATEMENT:
+                printf("Unrecognized statement: '%s'\n", input_buffer->buffer);
+                continue;
         }
 
-        switch(execute_recognized_statement(&statement, table)) {
+        switch (execute_recognized_statement(&statement, table)) {
             case EXECUTE_SUCCESS:
-                printf("EXECUTED\n");
+                printf("Executed.\n");
                 break;
             case EXECUTE_TABLE_FULL:
-                printf("ERROR!!! TABLE FULL\n");
+                printf("Error: Table full.\n");
+                break;
+            case EXECUTE_FAILURE:
+                printf("Execution failed.\n");
                 break;
         }
     }
+
     return 0;
 }
