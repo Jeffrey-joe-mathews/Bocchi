@@ -2,6 +2,9 @@
 #define DB_H
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
 //
 // -------- CONSTANTS FOR COLUMN SIZES --------
@@ -34,25 +37,25 @@ typedef struct {
 // These hold the size of each field within the Row struct.
 //
 
-const uint32_t ID_SIZE = szof(Row, id);                // 4 bytes
-const uint32_t USERNAME_SIZE = szof(Row, username);    // 32 bytes
-const uint32_t EMAIL_SIZE = szof(Row, email);          // 255 bytes
+#define ID_SIZE szof(Row, id)                // 4 bytes
+#define USERNAME_SIZE szof(Row, username)    // 32 bytes
+#define EMAIL_SIZE szof(Row, email)          // 255 bytes
 
 //
 // -------- FIELD OFFSETS --------
 // These define the byte offsets of each field in a binary row representation.
 //
 
-const uint32_t ID_OFFSET = 0;                                  // ID starts at 0
-const uint32_t USERNAME_OFFSET = ID_OFFSET + ID_SIZE;         // Username starts after ID
-const uint32_t EMAIL_OFFSET = USERNAME_OFFSET + USERNAME_SIZE;// Email starts after username
+#define ID_OFFSET 0                                        // ID starts at 0
+#define USERNAME_OFFSET (ID_OFFSET + ID_SIZE)              // Username starts after ID
+#define EMAIL_OFFSET (USERNAME_OFFSET + USERNAME_SIZE)     // Email starts after username
 
 //
 // -------- ROW SIZE --------
 // Total number of bytes used by one row in memory.
 //
 
-const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+#define ROW_SIZE (ID_SIZE + USERNAME_SIZE + EMAIL_SIZE)
 
 //
 // -------- PAGE AND TABLE CONFIGURATION --------
@@ -60,9 +63,60 @@ const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
 // and maximum number of rows supported.
 //
 
-const uint32_t PAGE_SIZE = 4096;          // Size of one page in bytes
-#define MAX_TABLE_PAGES 100               // Max number of pages in the table
-const uint32_t ROWS_PER_PAGE = PAGE_SIZE / ROW_SIZE;          // Rows that fit in one page
-const uint32_t MAX_TABLE_ROWS = ROWS_PER_PAGE * MAX_TABLE_PAGES;  // Total table capacity
+#define PAGE_SIZE 4096                     // Size of one page in bytes
+#define MAX_TABLE_PAGES 100                // Max number of pages in the table
+#define ROWS_PER_PAGE (PAGE_SIZE / ROW_SIZE)               // Rows that fit in one page
+#define MAX_TABLE_ROWS (ROWS_PER_PAGE * MAX_TABLE_PAGES)   // Total table capacity
+
+//
+// -------- TYPE DEFINITIONS FOR INPUT AND PARSING --------
+// These structures and enums define the input buffer, statement types,
+// and execution status.
+//
+
+typedef struct {
+    char *buffer;          // User input buffer
+    size_t buffer_length;  // Allocated buffer length
+    ssize_t input_length;  // Actual input length
+} InputBuffer;
+
+typedef enum {
+    SHELL_COMMAND_SUCCESS,
+    SHELL_COMMAND_UNRECOGNIZED
+} ShellCommandResult;
+
+typedef enum {
+    PREPARE_SUCCESS,
+    PREPARE_SYNTAX_ERROR,
+    PREPARE_UNRECOGNIZED_STATEMENT
+} PrepareResult;
+
+typedef enum {
+    INSERT_STATEMENT,
+    SELECT_STATEMENT
+} StatementType;
+
+typedef enum {
+    EXECUTE_SUCCESS,
+    EXECUTE_FAILURE,
+    EXECUTE_TABLE_FULL
+} ExecutionStatus;
+
+typedef struct {
+    StatementType type;    // Command type: insert or select
+    Row row_to_insert;     // Data to insert
+} Statement;
+
+typedef struct {
+    uint32_t num_rows;              // Number of rows currently stored
+    void* pages[MAX_TABLE_PAGES];   // Array of memory pages
+} Table;
+
+//
+// -------- SHARED FUNCTION PROTOTYPES --------
+// Functions used across files.
+//
+
+void* row_address(Table* table, uint32_t row_num);
 
 #endif // DB_H

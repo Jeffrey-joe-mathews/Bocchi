@@ -1,10 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include "db.h"
-//Hello
 #ifdef _WIN32
 // Custom implementation of getline for Windows
 ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
@@ -42,44 +36,6 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
     return len;
 }
 #endif
-
-typedef struct {
-    char *buffer;
-    size_t buffer_length;
-    ssize_t input_length;
-} InputBuffer;
-
-typedef enum {
-    SHELL_COMMAND_SUCCESS,
-    SHELL_COMMAND_UNRECOGNIZED
-} ShellCommandResult;
-
-typedef enum {
-    PREPARE_SUCCESS,
-    PREPARE_SYNTAX_ERROR,
-    PREPARE_UNRECOGNIZED_STATEMENT
-} PrepareResult;
-
-typedef enum {
-    INSERT_STATEMENT,
-    SELECT_STATEMENT
-} StatementType;
-
-typedef enum {
-    EXECUTE_SUCCESS,
-    EXECUTE_FAILURE,
-    EXECUTE_TABLE_FULL
-} ExecutionStatus;
-
-typedef struct {
-    StatementType type;
-    Row row_to_insert;
-} Statement;
-
-typedef struct {
-    uint32_t num_rows;
-    void* pages[MAX_TABLE_PAGES];
-} Table;
 
 Table* newTable() {
     Table* table = (Table*)malloc(sizeof(Table));
@@ -159,63 +115,25 @@ PrepareResult prepare_statement(InputBuffer* input_buffer, Statement* statement)
     return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
-void convert_to_binary(Row* row, void* destination) {
-    memcpy(destination + ID_OFFSET, &(row->id), ID_SIZE);
-    memcpy(destination + USERNAME_OFFSET, &(row->username), USERNAME_SIZE);
-    memcpy(destination + EMAIL_OFFSET, &(row->email), EMAIL_SIZE);
-}
-
-void convert_from_binary(Row* row, void* source) {
-    memcpy(&(row->id), source + ID_OFFSET, ID_SIZE);
-    memcpy(&(row->username), source + USERNAME_OFFSET, USERNAME_SIZE);
-    memcpy(&(row->email), source + EMAIL_OFFSET, EMAIL_SIZE);
-}
-
-void* row_address(Table* table, uint32_t row_num) {
-    uint32_t page_num = row_num / ROWS_PER_PAGE;
-    void* page = table->pages[page_num];
-
-    if (page == NULL) {
-        page = malloc(PAGE_SIZE);
-        table->pages[page_num] = page;
-    }
-
-    uint32_t row_offset = (row_num % ROWS_PER_PAGE) * ROW_SIZE;
-    return page + row_offset;
-}
-
-ExecutionStatus execute_insert(Statement* statement, Table* table) {
-    if (table->num_rows >= MAX_TABLE_ROWS) {
-        return EXECUTE_TABLE_FULL;
-    }
-
-    Row* row_to_insert = &(statement->row_to_insert);
-    convert_to_binary(row_to_insert, row_address(table, table->num_rows));
-    table->num_rows++;
-
-    return EXECUTE_SUCCESS;
-}
+// Prototypes from insert.c and select.c
+ExecutionStatus execute_insert(Statement* statement, Table* table);
+ExecutionStatus execute_select(Table* table);
 
 ExecutionStatus execute_recognized_statement(Statement* statement, Table* table) {
     switch (statement->type) {
         case INSERT_STATEMENT:
             return execute_insert(statement, table);
         case SELECT_STATEMENT:
-            for (uint32_t i = 0; i < table->num_rows; i++) {
-                Row row;
-                convert_from_binary(&row, row_address(table, i));
-                printf("(%d, %s, %s)\n", row.id, row.username, row.email);
-            }
-            return EXECUTE_SUCCESS;
+            return execute_select(table);
     }
     return EXECUTE_FAILURE;
 }
 
-int main(int argc, char* argv[]) {
+int main() {
     Table* table = newTable();
     InputBuffer* input_buffer = new_input_buffer();
 
-    while (true) {
+    while (1) {
         print_prompt();
         read_input(input_buffer);
 
