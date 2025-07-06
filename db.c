@@ -43,28 +43,33 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
 }
 #endif
 
+// struct for buffered input
 typedef struct {
     char *buffer;
     size_t buffer_length;
     ssize_t input_length;
 } InputBuffer;
 
+// struct for root commands and not db command (eg: .exit, .close and such)
 typedef enum {
     SHELL_COMMAND_SUCCESS,
     SHELL_COMMAND_UNRECOGNIZED
 } ShellCommandResult;
 
+// enumeration for the result status
 typedef enum {
     PREPARE_SUCCESS,
     PREPARE_SYNTAX_ERROR,
     PREPARE_UNRECOGNIZED_STATEMENT
 } PrepareResult;
 
+// enumeration for the statement type (eg: 0 for insertion, 1 for selection and so on)
 typedef enum {
     INSERT_STATEMENT,
     SELECT_STATEMENT
 } StatementType;
 
+// enumeration for the status of execution of a query
 typedef enum {
     EXECUTE_SUCCESS,
     EXECUTE_FAILURE,
@@ -76,11 +81,13 @@ typedef struct {
     Row row_to_insert;
 } Statement;
 
+// struct for a predefined table
 typedef struct {
-    uint32_t num_rows;
-    void* pages[MAX_TABLE_PAGES];
+    uint32_t num_rows;            // row number of the Table
+    void* pages[MAX_TABLE_PAGES]; // array of pointers to addresses
 } Table;
 
+// creates a new table
 Table* newTable() {
     Table* table = (Table*)malloc(sizeof(Table));
     table->num_rows = 0;
@@ -90,41 +97,47 @@ Table* newTable() {
     return table;
 }
 
+// frees the data from each row of the table and eventually the table
 void freeTable(Table* table) {
     for (uint32_t i = 0; i < MAX_TABLE_PAGES; i++) {
-        free(table->pages[i]);
+        free(table->pages[i]);      // free all adresses of the table
     }
-    free(table);
+    free(table);                    // free the table
 }
 
+//creates a new input buffer for reading data from input stream
 InputBuffer* new_input_buffer() {
     InputBuffer* input_buffer = malloc(sizeof(InputBuffer));
-    input_buffer->buffer = NULL;
-    input_buffer->buffer_length = 0;
-    input_buffer->input_length = 0;
+    input_buffer->buffer = NULL;        // pointer to the starting index of the array of characters
+    input_buffer->buffer_length = 0;    // stores the length of the buffer
+    input_buffer->input_length = 0;     // stores the length of characters without newline and also helps in error handling as it is of type ssize_t i.e. signed integer type(can accept -ve value)
     return input_buffer;
 }
 
+// to prompt user to type in input
 void print_prompt() {
     printf("[bocchi] >> ");
 }
 
+// to read and categorize the input accepted through the bufer
 void read_input(InputBuffer* input_buffer) {
-    ssize_t bytes_read = getline(&(input_buffer->buffer), &(input_buffer->buffer_length), stdin);
+    ssize_t bytes_read = getline(&(input_buffer->buffer), &(input_buffer->buffer_length), stdin);       // Read a line from stdin into the buffer; returns -1 on error or EOF, allowing for graceful error handling.
     if (bytes_read <= 0) {
         perror("Error in reading the input!\n");
         exit(EXIT_FAILURE);
     }
 
-    input_buffer->input_length = bytes_read - 1;
-    input_buffer->buffer[bytes_read - 1] = 0; // Remove newline
+    input_buffer->input_length = bytes_read - 1;    // length without the \n character
+    input_buffer->buffer[bytes_read - 1] = 0;       // Remove newline
 }
 
+// frees the address space and terminates the input buffer gracefully
 void close_buffer(InputBuffer* input_buffer) {
     free(input_buffer->buffer);
     free(input_buffer);
 }
 
+// handles a "shell" command which generally takes the user back to the terminal and gracefully exit the program
 ShellCommandResult do_shell_command(InputBuffer* input_buffer, Table* table) {
     if ((strcmp(input_buffer->buffer, ".exit") == 0) || (strcmp(input_buffer->buffer, ".close") == 0)) {
         close_buffer(input_buffer);
@@ -135,6 +148,7 @@ ShellCommandResult do_shell_command(InputBuffer* input_buffer, Table* table) {
     }
 }
 
+// helps to process a query with proper error handling and assign respective enumeration for various flags
 PrepareResult prepare_statement(InputBuffer* input_buffer, Statement* statement) {
     if (strncmp(input_buffer->buffer, "insert", 6) == 0) {
         statement->type = INSERT_STATEMENT;
@@ -159,43 +173,48 @@ PrepareResult prepare_statement(InputBuffer* input_buffer, Statement* statement)
     return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
+// converts the table data to binary
 void convert_to_binary(Row* row, void* destination) {
     memcpy(destination + ID_OFFSET, &(row->id), ID_SIZE);
     memcpy(destination + USERNAME_OFFSET, &(row->username), USERNAME_SIZE);
     memcpy(destination + EMAIL_OFFSET, &(row->email), EMAIL_SIZE);
 }
 
+// retrieves the data from binary
 void convert_from_binary(Row* row, void* source) {
     memcpy(&(row->id), source + ID_OFFSET, ID_SIZE);
     memcpy(&(row->username), source + USERNAME_OFFSET, USERNAME_SIZE);
     memcpy(&(row->email), source + EMAIL_OFFSET, EMAIL_SIZE);
 }
 
+// retrieves the address of the row where the new data must be stored
 void* row_address(Table* table, uint32_t row_num) {
     uint32_t page_num = row_num / ROWS_PER_PAGE;
-    void* page = table->pages[page_num];
+    void* page = table->pages[page_num];    // extract the address of the page from the Table struct
 
     if (page == NULL) {
-        page = malloc(PAGE_SIZE);
-        table->pages[page_num] = page;
+        page = malloc(PAGE_SIZE);           // memory allocation for creating a page
+        table->pages[page_num] = page;      // no typecasting as we're using the default void* for the address
     }
 
-    uint32_t row_offset = (row_num % ROWS_PER_PAGE) * ROW_SIZE;
+    uint32_t row_offset = (row_num % ROWS_PER_PAGE) * ROW_SIZE;     // finds the offset where the data must be stored at
     return page + row_offset;
 }
 
+// checks if the table is full otherwise process it and flag success
 ExecutionStatus execute_insert(Statement* statement, Table* table) {
     if (table->num_rows >= MAX_TABLE_ROWS) {
         return EXECUTE_TABLE_FULL;
     }
 
-    Row* row_to_insert = &(statement->row_to_insert);
-    convert_to_binary(row_to_insert, row_address(table, table->num_rows));
-    table->num_rows++;
+    Row* row_to_insert = &(statement->row_to_insert);       // fetches the row in which data has to be inserted
+    convert_to_binary(row_to_insert, row_address(table, table->num_rows));      // convertes the data to binary
+    table->num_rows++;                                      // increments the total number of rows in the table
 
     return EXECUTE_SUCCESS;
 }
 
+// checks the kind of query to be executed and sets the execution status 
 ExecutionStatus execute_recognized_statement(Statement* statement, Table* table) {
     switch (statement->type) {
         case INSERT_STATEMENT:
@@ -211,15 +230,16 @@ ExecutionStatus execute_recognized_statement(Statement* statement, Table* table)
     return EXECUTE_FAILURE;
 }
 
+// driver code
 int main(int argc, char* argv[]) {
-    Table* table = newTable();
-    InputBuffer* input_buffer = new_input_buffer();
+    Table* table = newTable();                          // creates a new table
+    InputBuffer* input_buffer = new_input_buffer();     // creates a new input buffer
 
     while (true) {
-        print_prompt();
-        read_input(input_buffer);
+        print_prompt();                                 // prompts user to type in input
+        read_input(input_buffer);                       // get data from the input buffer till '\n' is reached
 
-        if (input_buffer->buffer[0] == '.') {
+        if (input_buffer->buffer[0] == '.') {           // checks for a "shell" command
             switch (do_shell_command(input_buffer, table)) {
                 case SHELL_COMMAND_SUCCESS:
                     continue;
@@ -229,7 +249,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        Statement statement;
+        Statement statement;                            // creates a statement
         switch (prepare_statement(input_buffer, &statement)) {
             case PREPARE_SUCCESS:
                 break;
@@ -255,5 +275,5 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    return 0;
+    return 0;   // return 0 duh
 }
