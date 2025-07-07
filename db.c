@@ -148,6 +148,10 @@ ShellCommandResult do_shell_command(InputBuffer* input_buffer, Table* table) {
     }
 }
 
+void print_row(Row* row) {
+    printf("[ %d %s %s ]\n", row->id, row->username, row->email);
+}
+
 // helps to process a query with proper error handling and assign respective enumeration for various flags
 PrepareResult prepare_statement(InputBuffer* input_buffer, Statement* statement) {
     if (strncmp(input_buffer->buffer, "insert", 6) == 0) {
@@ -214,18 +218,30 @@ ExecutionStatus execute_insert(Statement* statement, Table* table) {
     return EXECUTE_SUCCESS;
 }
 
+ExecutionStatus execute_select(Statement* statement, Table* table) {
+    Row row_to_select;
+
+    for (uint32_t row = 0; row < table->num_rows; row++) {
+        convert_from_binary( &row_to_select, row_address(table, row));
+        print_row(&row_to_select);
+    }
+
+    return EXECUTE_SUCCESS;
+}
+
 // checks the kind of query to be executed and sets the execution status 
 ExecutionStatus execute_recognized_statement(Statement* statement, Table* table) {
     switch (statement->type) {
         case INSERT_STATEMENT:
             return execute_insert(statement, table);
         case SELECT_STATEMENT:
-            for (uint32_t i = 0; i < table->num_rows; i++) {
-                Row row;
-                convert_from_binary(&row, row_address(table, i));
-                printf("(%d, %s, %s)\n", row.id, row.username, row.email);
-            }
-            return EXECUTE_SUCCESS;
+            // for (uint32_t i = 0; i < table->num_rows; i++) {
+            //     Row row;
+            //     convert_from_binary(&row, row_address(table, i));
+            //     printf("(%d, %s, %s)\n", row.id, row.username, row.email);
+            // }
+            // return EXECUTE_SUCCESS;
+            return execute_select(statement, table);
     }
     return EXECUTE_FAILURE;
 }
