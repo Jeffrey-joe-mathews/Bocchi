@@ -235,12 +235,6 @@ ExecutionStatus execute_recognized_statement(Statement* statement, Table* table)
         case INSERT_STATEMENT:
             return execute_insert(statement, table);
         case SELECT_STATEMENT:
-            // for (uint32_t i = 0; i < table->num_rows; i++) {
-            //     Row row;
-            //     convert_from_binary(&row, row_address(table, i));
-            //     printf("(%d, %s, %s)\n", row.id, row.username, row.email);
-            // }
-            // return EXECUTE_SUCCESS;
             return execute_select(statement, table);
     }
     return EXECUTE_FAILURE;
